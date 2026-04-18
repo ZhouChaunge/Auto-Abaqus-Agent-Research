@@ -1,0 +1,32 @@
+# Gemini Code Assist Configuration
+# This file configures Google's Gemini Code Assist for PR reviews
+# Docs: https://cloud.google.com/gemini/docs/code-assist
+
+# Language for code review comments
+language: "en"
+
+# Code review settings
+code_review:
+  # Enable automatic code review on PR
+  enabled: true
+  
+  # Review scope
+  scope:
+    - "*.py"
+    - "*.js"
+    - "*.ts"
+    - "*.tsx"
+    - "*.yml"
+    - "*.yaml"
+  
+  # Focus areas
+  focus:
+    - security
+    - performance
+    - best_practices
+    - readability
+    - documentation
+
+# Chat settings for inline discussions
+chat:
+  enabled: true
