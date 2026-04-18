@@ -37,6 +37,7 @@ export default function ChatPage() {
   const [model, setModel] = useState('gpt-4o')
   const [showSettings, setShowSettings] = useState(false)
   const [showProviderSettings, setShowProviderSettings] = useState(false)
+  const [modelRefresh, setModelRefresh] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Conversation state
@@ -282,7 +283,7 @@ export default function ChatPage() {
           <p className="text-sm text-dark-400">与 AI 讨论 Abaqus 相关问题</p>
         </div>
         <div className="flex items-center gap-2">
-          <ModelSelector value={model} onChange={setModel} />
+          <ModelSelector value={model} onChange={setModel} refreshTrigger={modelRefresh} />
           <button
             onClick={() => setShowProviderSettings(true)}
             className="p-2 rounded-lg hover:bg-dark-800 transition-colors"
@@ -309,6 +310,7 @@ export default function ChatPage() {
       <ProviderSettings
         isOpen={showProviderSettings}
         onClose={() => setShowProviderSettings(false)}
+        onKeysChanged={() => setModelRefresh((n) => n + 1)}
       />
 
       {/* Settings panel */}

@@ -25,9 +25,10 @@ interface CatalogItem {
 interface ProviderSettingsProps {
   isOpen: boolean
   onClose: () => void
+  onKeysChanged?: () => void
 }
 
-export default function ProviderSettings({ isOpen, onClose }: ProviderSettingsProps) {
+export default function ProviderSettings({ isOpen, onClose, onKeysChanged }: ProviderSettingsProps) {
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [keys, setKeys] = useState<ProviderKeyInfo[]>([])
   const [addingFor, setAddingFor] = useState<string | null>(null)
@@ -71,6 +72,7 @@ export default function ProviderSettings({ isOpen, onClose }: ProviderSettingsPr
         setNewLabel('')
         setAddingFor(null)
         await fetchData()
+        onKeysChanged?.()
       }
     } catch {
       // Ignore
@@ -81,6 +83,7 @@ export default function ProviderSettings({ isOpen, onClose }: ProviderSettingsPr
     try {
       await fetch(`/api/v1/providers/keys/${keyId}`, { method: 'DELETE' })
       await fetchData()
+      onKeysChanged?.()
     } catch {
       // Ignore
     }

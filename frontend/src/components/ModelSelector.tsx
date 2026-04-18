@@ -12,15 +12,16 @@ interface ModelInfo {
 interface ModelSelectorProps {
   value: string
   onChange: (model: string) => void
+  refreshTrigger?: number
 }
 
-export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
+export default function ModelSelector({ value, onChange, refreshTrigger = 0 }: ModelSelectorProps) {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [isOpen, setIsOpen] = useState(false)
 
   useEffect(() => {
     fetchModels()
-  }, [])
+  }, [refreshTrigger])
 
   const fetchModels = async () => {
     try {
