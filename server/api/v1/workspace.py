@@ -1034,7 +1034,6 @@ async def run_tool(tool_name: str, params: dict, workspace_path: str) -> str:
             return f"读取失败: {e}"
 
     elif tool_name == "find_path":
-        import shlex
         name = params.get("name", "").strip()
         if not name:
             return "错误：name 参数为空"
