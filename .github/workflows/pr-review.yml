@@ -1,0 +1,124 @@
+# AI-Powered PR Review Bot / AI 代码审查机器人
+# This workflow automatically reviews PR code changes using LLM
+
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Cancel in-progress runs for the same PR
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    
+    # Skip if PR has 'skip-review' label
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-review') }}
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install litellm httpx pydantic python-dotenv
+      
+      - name: Get PR diff
+        id: diff
+        run: |
+          # Get the diff between base and head
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          echo "diff_file=pr_diff.txt" >> $GITHUB_OUTPUT
+      
+      - name: Run AI Review
+        id: review
+        env:
+          # LLM API Keys - Configure in GitHub Secrets
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          
+          # Review configuration
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || 'gpt-4o' }}
+          REVIEW_LANGUAGE: ${{ vars.REVIEW_LANGUAGE || 'bilingual' }}
+          
+          # PR info
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python scripts/pr_review.py \
+            --diff-file pr_diff.txt \
+            --output review_result.md \
+            --model "$REVIEW_MODEL" \
+            --language "$REVIEW_LANGUAGE"
+      
+      - name: Post Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reviewContent = fs.readFileSync('review_result.md', 'utf8');
+            
+            // Find existing bot comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('<!-- AI-PR-REVIEW -->')
+            );
+            
+            const commentBody = `<!-- AI-PR-REVIEW -->
+            
+## 🤖 AI Code Review / AI 代码审查
+
+${reviewContent}
+
+---
+<sub>🔍 Powered by AbaqusGPT AI Review Bot | Model: \`${{ vars.REVIEW_MODEL || 'gpt-4o' }}\`</sub>
+<sub>💡 Add \`skip-review\` label to skip AI review</sub>`;
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody,
+              });
+              console.log('Updated existing review comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody,
+              });
+              console.log('Created new review comment');
+            }
