@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Loader2, Settings2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import DomainSelector from '../components/DomainSelector'
+import ConversationSidebar, {
+  type ConversationSummary,
+} from '../components/ConversationSidebar'
 
 interface Message {
   id: string
@@ -32,6 +35,10 @@ export default function ChatPage() {
   const [showSettings, setShowSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Conversation state
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [activeConvId, setActiveConvId] = useState<string | null>(null)
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -39,6 +46,112 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Load conversation list on mount
+  useEffect(() => {
+    fetchConversations()
+  }, [])
+
+  const fetchConversations = async () => {
+    try {
+      const res = await fetch('/api/v1/conversations/')
+      if (res.ok) {
+        const data = await res.json()
+        setConversations(data)
+      }
+    } catch {
+      // Ignore — Redis may not be available
+    }
+  }
+
+  const loadConversation = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/v1/conversations/${convId}`)
+      if (res.ok) {
+        const conv = await res.json()
+        setActiveConvId(conv.id)
+        setDomain(conv.domain)
+        setMessages(
+          conv.messages.map((m: { id: string; role: string; content: string; timestamp: string }) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }))
+        )
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  const saveConversation = useCallback(
+    async (msgs: Message[], convDomain: string, convId: string | null) => {
+      const serialized = msgs.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+      }))
+
+      try {
+        if (convId) {
+          // Update existing
+          const title =
+            msgs.find((m) => m.role === 'user')?.content.slice(0, 30) || '新对话'
+          await fetch(`/api/v1/conversations/${convId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title,
+              domain: convDomain,
+              messages: serialized,
+            }),
+          })
+        } else {
+          // Create new
+          const title =
+            msgs.find((m) => m.role === 'user')?.content.slice(0, 30) || '新对话'
+          const res = await fetch('/api/v1/conversations/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, domain: convDomain }),
+          })
+          if (res.ok) {
+            const conv = await res.json()
+            setActiveConvId(conv.id)
+            // Save messages into newly created conversation
+            await fetch(`/api/v1/conversations/${conv.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messages: serialized }),
+            })
+          }
+        }
+        await fetchConversations()
+      } catch {
+        // Ignore save errors
+      }
+    },
+    []
+  )
+
+  const handleNewConversation = () => {
+    setActiveConvId(null)
+    setMessages([])
+    setDomain('general')
+  }
+
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      await fetch(`/api/v1/conversations/${convId}`, { method: 'DELETE' })
+      if (activeConvId === convId) {
+        setActiveConvId(null)
+        setMessages([])
+      }
+      await fetchConversations()
+    } catch {
+      // Ignore
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -129,15 +242,37 @@ export default function ChatPage() {
       ])
     } finally {
       setIsLoading(false)
+      // Auto-save after response completes
+      setMessages((latestMsgs) => {
+        saveConversation(latestMsgs, domain, activeConvId)
+        return latestMsgs
+      })
     }
   }
 
   const clearChat = () => {
+    if (activeConvId) {
+      handleDeleteConversation(activeConvId)
+    }
     setMessages([])
+    setActiveConvId(null)
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full">
+      {/* Conversation history sidebar */}
+      <div className="hidden md:flex w-64 flex-shrink-0 border-r border-dark-800 bg-dark-900/50 flex-col">
+        <ConversationSidebar
+          conversations={conversations}
+          activeId={activeConvId}
+          onSelect={loadConversation}
+          onNew={handleNewConversation}
+          onDelete={handleDeleteConversation}
+        />
+      </div>
+
+      {/* Chat area */}
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-dark-800">
         <div>
@@ -224,14 +359,14 @@ export default function ChatPage() {
                   <div className="prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown
                       components={{
-                        code({ inline, className, children, ...props }) {
+                        code({ className, children, ...props }) {
                           const match = /language-(\w+)/.exec(className || '')
-                          return !inline && match ? (
+                          const isInline = !match
+                          return !isInline && match ? (
                             <SyntaxHighlighter
-                              style={oneDark}
+                              style={oneDark as Record<string, React.CSSProperties>}
                               language={match[1]}
                               PreTag="div"
-                              {...props}
                             >
                               {String(children).replace(/\n$/, '')}
                             </SyntaxHighlighter>
@@ -299,6 +434,7 @@ export default function ChatPage() {
           </button>
         </div>
       </form>
+    </div>
     </div>
   )
 }
