@@ -1,0 +1,101 @@
+# AbaqusGPT Docker Configuration
+
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: abaqusgpt-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ABAQUSGPT_ENV=production
+      - ABAQUSGPT_HOST=0.0.0.0
+      - ABAQUSGPT_PORT=8000
+      - ABAQUSGPT_LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - ABAQUSGPT_LLM_MODEL=${LLM_MODEL:-gpt-4}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://abaqusgpt:abaqusgpt@postgres:5432/abaqusgpt
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - abaqusgpt-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: abaqusgpt-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - abaqusgpt-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: abaqusgpt-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - abaqusgpt-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: abaqusgpt-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=abaqusgpt
+      - POSTGRES_PASSWORD=abaqusgpt
+      - POSTGRES_DB=abaqusgpt
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - abaqusgpt-network
+    restart: unless-stopped
+
+  # ChromaDB Vector Store (optional)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: abaqusgpt-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    networks:
+      - abaqusgpt-network
+    restart: unless-stopped
+
+networks:
+  abaqusgpt-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data:
+  chroma-data:
