@@ -362,3 +362,5 @@ MIT License - see [LICENSE](LICENSE)
 <p align="center">
   <b>AbaqusGPT</b> — 让有限元分析不再困难 🚀
 </p>
+
+<!-- copilot test -->
